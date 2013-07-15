@@ -184,19 +184,18 @@ function $after(byte) {
 ## Implementing a Byte Parser
 
 ```javascript
-function parser(emit, $done) {
-  var first;
-  return $first;
+// Sub state machine for hex escaped characters
+function hexMachine(emit) {
+  var left = 4, num = 0;
 
-  function $first(byte) {
-    first = byte;
-    return $second;
+  return $hex;
+
+  function $hex(byte) {
+    num |= parseHex(byte) << (--left * 4);
+    if (left) return $hex;
+    return emit(num);
   }
-  function $second(byte) {
-    var xor = (first | byte) & ~(first & byte);
-    emit(xor);
-    return xor ? $first : $done;
-  }
+
 }
 ```
 
@@ -213,7 +212,136 @@ function parser(emit, $done) {
 # Continuables
 
 
+## Continuables
+
+```javascript
+var continuable = fs.readFile("myFile.txt");
+continuable(function (err, data) {
+  if (err) throw err;
+  // handle data.
+})
+```
+
+ - Continuables are functions that accept a continuation body.
+ - A cross between node-style callbacks and promises.
+ - 100% simple convention.  No library required.
+
+
+## Composable Helpers
+
+```js
+function init(conf, description, exclude) {
+  return serial(
+    fs.mkdir("."),
+    parallel(
+      fs.mkdir("branches"),
+      write("config", conf),
+      write("description", description),
+      serial(
+        fs.mkdir("info"),
+        write("info/exclude", exclude)
+      )
+    )
+  );
+}
+```
+
+
+## Implementation of a Helper
+
+```js
+function serial() {
+  var items = Arrayslice.call(arguments);
+  return function (callback) {
+    check();
+    function check(err) {
+      if (err) return callback(err);
+      var next = items.shift();
+      if (!next) return callback();
+      next(check);
+    }
+  };
+}
+```
+
+
 # Generators
+
+
+## Generators
+
+ - ES6 has a new feature called generators.
+ - A generator function can yield a value and then later resume where it left off.
+ - Combining generators with continuables allows for blocking code within an event loop!
+ - Node.JS 0.11.3+ has generators built in behind a `--harmony_generators` flag.
+
+
+## A Simple Generator
+
+```javascript
+function* fib() {
+  var a = 1, b = 0;
+  while (true) {
+    yield a
+    var temp = a;
+    a = a + b;
+    b = temp;
+  }
+}
+```
+
+ - Every time the generator is resumed, it will yield the next fibonacci value resuming where it left off.
+
+
+## Generator Flow Control
+
+```javascript
+run(function* () {
+  var repo = yield jsgit.repo("/path/to/repo");
+  var head = yield repo.readRef("HEAD");
+  var commit = yield repo.load(head);
+  var tree = yield repo.load(commit.tree);
+});
+```
+
+ - `run` is a tiny function that consumes continuables passing in callbacks to them and resumes the generator when the callback gets called.
+
+
+## Generators are Shallow
+
+```javascript
+run(function* () {
+  var names = yield fs.readdir("mydir");
+  names.forEach(function (name) {
+    var path = path.join("mydir/", name);
+    var data = yield fs.readFile(path, "utf8");
+    console.log(path, data);
+  });
+});
+```
+
+- This will **not** work.  You can't yield from the callback it's not a generator.
+
+
+## Delegating Yield
+
+```javascript
+run(function* () {
+  var names = yield fs.readdir("mydir");
+  yield* each(names, function* (name) {
+    var path = path.join("mydir/", name);
+    var data = yield fs.readFile(path, "utf8");
+    console.log(path, data);
+  });
+});
+
+function* each(array, callback) {
+  for (var i = 0, i < array.length; i++) {
+    yield* callback(array[i]);
+  }
+}
+```
+
 
 
 # Simple Streams
