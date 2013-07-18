@@ -186,11 +186,136 @@ tcp.createServer(8080, function (stream) {
 
 
 
-## Decoupling I/O from Protocol
+# State Machines
 
- - Why do most frameworks and libraries couple HTTP with actual TCP servers?
- - Because *most* of the time, you will be using HTTP over TCP.
- - But what if you're not?
+## The bread and butter of protocol streams.
+
+
+```javascript
+var decoder = JSON.createDecoder(emit);
+
+decoder.write('{"name":"Tim');
+decoder.write(' Caswell"}[1');
+decoder.write(',2,3][4,5,6]');
+
+decoder.end();
+```
+
+```javascript
+{ name: 'Tim Caswell' }
+[ 1, 2, 3 ]
+[ 4, 5, 6 ]
+```
+
+
+```javascript
+var encoder = JSON.createEncoder(console.log);
+
+encoder.write({ name: 'Tim Caswell' });
+encoder.write([ 1, 2, 3 ]);
+encoder.write([ 4, 5, 6 ]);
+
+encoder.end();
+```
+
+```javascript
+'{"name":"Tim Caswell"}'
+'[1,2,3]'
+'[4,5,6]'
+```
+
+
+```javascript
+json = JSON.stringify({name: 'Tim Caswell'});
+json = JSON.stringify([1, 2, 3]);
+json = JSON.stringify([4, 5, 6]);
+```
+
+
+```javascript
+var parser = HTTP.createParser(console.log);
+
+parser.write('GET / HTTP/1.1\r\nHost: ');
+parser.write('creationix.com\r\nConnec');
+parser.write('tion: Keep-Alive\r\n\r\n');
+parser.write('GET /favicon.ico HTTP/1.');
+parser.write('1\r\nHost: creationix.co');
+parser.write('m\r\nConnection: Close\r');
+parser.write('\n\r\n');
+
+parser.end();
+```
+
+
+```javascript
+{
+  method: 'GET', path: '/',
+  headers: [
+    [ 'Host', 'creationix.com' ],
+    [ 'Connection', 'Keep-Alive' ]
+  ]
+}
+{
+  method: 'GET', path: '/favicon.ico',
+  headers: [
+    [ 'Host', 'creationix.com' ],
+    [ 'Connection', 'Close' ]
+  ]
+}
+```
+
+
+```javascript
+function transformer(emit) {
+
+  return function (item) {
+
+  };
+
+}
+```
+
+
+```javascript
+var state = inflate(onByte, $after);
+
+for (var i = 0; i < data.length; i++) {
+  state = state(data[i]);
+}
+```
+
+
+```javascript
+function $before(byte) {
+  return inflate(onByte, $after);
+}
+
+function $after(byte) {
+  return $someOtherState;
+}
+```
+
+
+```javascript
+function hexMachine(emit) {
+  var left = 4, num = 0;
+
+  return $hex;
+
+  function $hex(byte) {
+    num |= parseHex(byte) << (--left * 4);
+    if (left) return $hex;
+    return emit(num);
+  }
+
+}
+```
+
+
+## How do I know which style to use?
+
+
+## Decoupling I/O from Protocol
 
 
 ## Reasons to Decouple
@@ -200,8 +325,6 @@ tcp.createServer(8080, function (stream) {
  - Less dependencies
 
 
-## A simple TCP interface
-
 ```javascript
 var tcp = require('simple-tcp');
 tcp.createServer(8080, function (socket) {
@@ -210,12 +333,6 @@ tcp.createServer(8080, function (socket) {
 });
 ```
 
- - This interface is a standard simple-streams interface.
- - It implements some concrete network primitive.
- - But code that consumes this can easily be fed a mock interface.
-
-
-## An HTTP Codec
 
 ```javascript
 var tcp = require('simple-tcp');
@@ -223,15 +340,11 @@ var parser = require('http-request-parser');
 var encoder = require('http-response-encoder');
 tcp.createServer(8080, function (socket) {
   var httpSocket = parser(socket);
-  // httpSocket = { read, abort }
   httpSocket.sink = function (stream) {
     socket.sink(encoder(stream));
   };
 });
 ```
-
- - Notice that the two HTTP libraries are simply stream transforms.
- - They know nothing about the TCP server or that the stream is even over TCP.
 
 
 ## An HTTP API
@@ -257,17 +370,12 @@ tcp.createServer(8080, function (socket) {
  - Converts between raw JSON strings or buffers and JavaScript objects.
 
 
-## A Web App Interface
-
 ```javascript
 function app(request) {
   console.log(request.method, request.path);
   return "Hello World";
 }
 ```
-
- - The web app knows nothing about TCP or even HTTP protocols.
- - It only knows the web app interface.
 
 
 ## The API
@@ -278,24 +386,6 @@ function app(request) {
  - For ease of use, lots of sugar and shortcuts are added.
 
 
-## Sane Defaults
-
- - `code` defaults to `200`
- - `headers` auto insert things like `Date`, `Content-Length`, `Content-Type`
- - If the return value is a string or a stream, that's the body.
- - For apps that can't return their result directly, returning a continuable is acceptable.
-
-
-## Just a Sample Web Interface
-
- - I won't focus on the specefics of this sample web app interface.
- - The point is it's decoupled from the network stack.
- - App level unit tests can pass in directly request objects and expect back response objects.
- - No need for a real TCP server or even HTTP protocol codecs.
-
-
-## Sample Test
-
 ```javascript
 test("Root returns HTML", function (assert) {
   var request = {
@@ -304,7 +394,6 @@ test("Root returns HTML", function (assert) {
   var result = app(request);
   normalize(result, function (result) {
     assert.equal(result.code, 200);
-    // ... and more tests
     assert.end();
   });
 });
@@ -312,229 +401,16 @@ test("Root returns HTML", function (assert) {
 
 
 
-# State Machines
+# Takeaways
 
-## The bread and butter of protocol streams.
 
+## Simple Conventions
 
-## Decoupled Codecs
 
- - Codecs are parsers, decoders, encoders, etc...
- - Basically anything that translates from one protocol or representation to another.
- - Codecs should not care or even know about your program's I/O model.
- - They only care about consuming data and emitting data.
+## Decouple Protocols From I/O
 
 
-## Streaming JSON Decoder
-
-```javascript
-var decoder = JSON.createDecoder(emit);
-
-decoder.write('{"name":"Tim');
-decoder.write(' Caswell"}[1');
-decoder.write(',2,3][4,5,6]');
-
-decoder.end();
-```
-
-```javascript
-{ name: 'Tim Caswell' }
-[ 1, 2, 3 ]
-[ 4, 5, 6 ]
-```
-
-
-## Streaming JSON Encoder
-
-```javascript
-var encoder = JSON.createEncoder(console.log);
-
-encoder.write({ name: 'Tim Caswell' });
-encoder.write([ 1, 2, 3 ]);
-encoder.write([ 4, 5, 6 ]);
-
-encoder.end();
-```
-
-```javascript
-'{"name":"Tim Caswell"}'
-'[1,2,3]'
-'[4,5,6]'
-```
-
-
-## JSON Encoder
-
-```javascript
-json = JSON.stringify({name: 'Tim Caswell'});
-json = JSON.stringify([1, 2, 3]);
-json = JSON.stringify([4, 5, 6]);
-```
-
- - Use the right tool for the job.
- - Input to output is 1:1, so a plain function is fine.
-
-
-## Streaming HTTP Parser
-
-```javascript
-var parser = HTTP.createParser(console.log);
-
-parser.write('GET / HTTP/1.1\r\nHost: ');
-parser.write('creationix.com\r\nConnec');
-parser.write('tion: Keep-Alive\r\n\r\n');
-parser.write('GET /favicon.ico HTTP/1.');
-parser.write('1\r\nHost: creationix.co');
-parser.write('m\r\nConnection: Close\r');
-parser.write('\n\r\n');
-
-parser.end();
-```
-
-
-## Sample HTTP Output
-
-```javascript
-{
-  method: 'GET', path: '/',
-  headers: [
-    [ 'Host', 'creationix.com' ],
-    [ 'Connection', 'Keep-Alive' ]
-  ]
-}
-{
-  method: 'GET', path: '/favicon.ico',
-  headers: [
-    [ 'Host', 'creationix.com' ],
-    [ 'Connection', 'Close' ]
-  ]
-}
-```
-
-
-## Writing a push style transformer.
-
-```javascript
-// (push-stream) -> push-stream
-function transformer(output) {
-  // Once per stream setup area.
-  return { write: write, end: end };
-
-  function write(item) {
-    // Once per item
-    // here we can call output.emit 0-n times.
-  }
-  function end() {
-    // Optionally cleanup state machine.
-    // We can still emit and/or output.end.
-  }
-}
-```
-
-
-## Writing a push style transformer.
-
-```javascript
-// (emit) -> emit
-function transformer(emit) {
-  // Once per stream setup area.
-
-  return function (item) {
-    // Once per item area.
-    // here we can call emit 0-n times.
-  };
-
-}
-```
-
-
-## Byte Oriented Parser
-
-```javascript
-// Get the starting state from a byte oriented
-// parser.  It emits bytes back to us.
-var state = inflate(onByte);
-
-// When we get data, feed it in.
-for (var i = 0; i < data.length; i++) {
-  state = state(data[i]);
-  // When the state machine is done,
-  // it can return a falsy state.
-  if (!state) return onParserDone();
-}
-```
-
-
-## Nested Byte Parsers
-
-```javascript
-// An example state in our machine
-function $before(byte) {
-  // handle input
-  // Hand control to the sub machine.
-  return inflate(onInflate, $after);
-}
-
-function $after(byte) {
-  // Inflate was done parsing and handed
-  // control back to us.
-  // ...
-  return $someOtherState;
-}
-```
-
-
-## Implementing a Byte Parser
-
-```javascript
-// Sub state machine for hex escaped characters
-function hexMachine(emit) {
-  var left = 4, num = 0;
-
-  return $hex;
-
-  function $hex(byte) {
-    num |= parseHex(byte) << (--left * 4);
-    if (left) return $hex;
-    return emit(num);
-  }
-
-}
-```
-
-
-## How do I know which to use?
-
- - Use whichever format expresses your problem most closely.
- - Keep it minimal and only use dependencies for basic functionality.
- - People can always wrap your core logic in whatever interface they need.
- - Document and unit-test well.
-
-
-
-# Abstraction
-
-
-## Using abstraction correctly is essential to maintable software.
-
-
-## Seperate Concerns
-
- - Each module should have clearly defined and natural responsibilities.
- - Use clear interfaces for module interop.
- - Network transports and protocols are great places to draw lines.
- - Dependencies are expensive, treat them as such.
- - If the dependency saves you more lines of code than is has in it, it's probably OK.
-
-
-## Summary
-
- - State machines are awesome!
- - Continuables fill the gap between promises and callbacks.
- - Generators make serial logic natural.
- - Simple streams and stream oriented programming are great.
- - Never conflate physical transports with protocol codecs.
-
+## Use the Right Tool for the Job
 
 
 # Thank You!
