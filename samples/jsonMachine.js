@@ -4,7 +4,7 @@
 function jsonMachine(emit, next) {
   next = next || $value;
   return $value;
-  
+
   function $value(byte) {
     if (!byte) return;
     if (byte === 0x09 || byte === 0x0a || byte === 0x0d || byte === 0x20) {
@@ -36,17 +36,17 @@ function jsonMachine(emit, next) {
     }
     return next(byte);
   }
-  
+
   function onValue(value) {
     emit(value);
     return next;
   }
-  
+
   function onNumber(number, byte) {
     emit(number);
     return $value(byte);
   }
-  
+
 }
 
 var TRUE = [0x72, 0x75, 0x65];
@@ -56,7 +56,7 @@ var NULL = [0x75, 0x6c, 0x6c];
 function constantMachine(bytes, value, emit) {
   var i = 0, l = bytes.length;
   return $constant;
-  
+
   function $constant(byte) {
     if (byte !== bytes[i++]) {
       throw new Error("Unexpected 0x" + byte.toString(16));
@@ -86,7 +86,7 @@ function stringMachine(emit) {
     string += String.fromCharCode(byte);
     return $string;
   }
-  
+
   function $escapedString(byte) {
     if (byte === 0x22 || byte === 0x5c || byte === 0x2f) { // " \ /
       string += String.fromCharCode(byte);
@@ -126,9 +126,9 @@ function stringMachine(emit) {
 
 // Nestable state machine for UTF-8 Decoding.
 function utf8Machine(byte, emit) {
-  
+
   var left = 0, num = 0;
-  
+
   if (byte >= 0xc0 && byte < 0xe0) { // 2-byte UTF-8 Character
     left = 1;
     num = (byte & 0x1f) << 6;
@@ -145,7 +145,7 @@ function utf8Machine(byte, emit) {
     return $utf8;
   }
   throw new Error("Invalid byte in UTF-8 string: 0x" + byte.toString(16));
-  
+
   function $utf8(byte) {
     if ((byte & 0xc0) !== 0x80) {
       throw new Error("Invalid byte in UTF-8 character: 0x" + byte.toString(16));
@@ -160,37 +160,37 @@ function utf8Machine(byte, emit) {
 // Nestable state machine for hex escaped characters
 function hexMachine(emit) {
   var left = 4, num = 0;
-  
+
   return $hex;
-  
+
   function $hex(byte) {
     var i = 0; // Parse the hex byte
     if (byte >= 0x30 && byte < 0x40) i = byte - 0x30;
     else if (byte >= 0x61 && byte <= 0x66) i = byte - 0x57;
     else if (byte >= 0x41 && byte <= 0x46) i = byte - 0x37;
     else throw new Error("Expected hex char in string hex escape");
-    
+
     num |= i << (--left * 4);
     if (left) return $hex;
     return emit(num);
   }
-  
+
 }
 
 function numberMachine(byte, emit) {
-  
+
   var sign = 1;
   var number = 0;
   var decimal = 0;
   var esign = 1;
   var exponent = 0;
-  
+
   if (byte === 0x2d) { // -
     sign = -1;
     return $start;
   }
   return $start(byte);
-  
+
   function $start(byte) {
     if (byte === 0x30) {
       return $mid;
@@ -198,16 +198,16 @@ function numberMachine(byte, emit) {
     if (byte > 0x30 && byte < 0x40) {
       return $number(byte);
     }
-    throw new Error("Invalid number: 0x" + byte.toString(16));  
+    throw new Error("Invalid number: 0x" + byte.toString(16));
   }
-  
+
   function $mid(byte) {
     if (byte === 0x2e) { // .
       return $decimal;
     }
     return $later(byte);
   }
-  
+
   function $number(byte) {
     if (byte >= 0x30 && byte < 0x40) {
       number = number * 10 + (byte - 0x30);
@@ -215,7 +215,7 @@ function numberMachine(byte, emit) {
     }
     return $mid(byte);
   }
-  
+
   function $decimal(byte) {
     if (byte >= 0x30 && byte < 0x40) {
       decimal = (decimal + byte - 0x30) / 10;
@@ -234,14 +234,14 @@ function numberMachine(byte, emit) {
   function $esign(byte) {
     if (byte === 0x2b) { // +
       return $exponent;
-    } 
+    }
     if (byte === 0x2d) { // -
       esign = -1;
       return $exponent;
     }
     return $exponent(byte);
   }
-  
+
   function $exponent(byte) {
     if (byte >= 0x30 && byte < 0x40) {
       exponent = exponent * 10 + (byte - 0x30);
@@ -249,7 +249,7 @@ function numberMachine(byte, emit) {
     }
     return $done(byte);
   }
-  
+
   function $done(byte) {
     var value = sign * (number + decimal);
     if (exponent) {
@@ -262,20 +262,20 @@ function numberMachine(byte, emit) {
 
 function arrayMachine(emit) {
   var array = [];
-  
+
   return $array;
-  
+
   function $array(byte) {
     if (byte === 0x5d) { // ]
       return emit(array);
     }
     return jsonMachine(onValue, $comma)(byte);
   }
-  
+
   function onValue(value) {
     array.push(value);
   }
-  
+
   function $comma(byte) {
     if (byte === 0x09 || byte === 0x0a || byte === 0x0d || byte === 0x20) {
       return $comma; // Ignore whitespace
@@ -293,16 +293,16 @@ function arrayMachine(emit) {
 function objectMachine(emit) {
   var object = {};
   var key;
-  
+
   return $object;
-  
+
   function $object(byte) {
     if (byte === 0x7d) { // }
       return emit(object);
     }
     return $key(byte);
   }
-  
+
   function $key(byte) {
     if (byte === 0x09 || byte === 0x0a || byte === 0x0d || byte === 0x20) {
       return $object; // Ignore whitespace
@@ -312,12 +312,12 @@ function objectMachine(emit) {
     }
     throw new Error("Unexpected byte: 0x" + byte.toString(16));
   }
-  
+
   function onKey(result) {
     key = result;
     return $colon;
   }
-  
+
   function $colon(byte) {
     if (byte === 0x09 || byte === 0x0a || byte === 0x0d || byte === 0x20) {
       return $colon; // Ignore whitespace
@@ -327,11 +327,11 @@ function objectMachine(emit) {
     }
     throw new Error("Unexpected byte: 0x" + byte.toString(16));
   }
-  
+
   function onValue(value) {
     object[key] = value;
   }
-  
+
   function $comma(byte) {
     if (byte === 0x09 || byte === 0x0a || byte === 0x0d || byte === 0x20) {
       return $comma; // Ignore whitespace
@@ -346,7 +346,38 @@ function objectMachine(emit) {
   }
 }
 
+function parse(data) {
+  var object;
+  var state = jsonMachine(function (value) {
+    if (value === undefined) return;
+    object = value;
+  });
+  for (var i = 0, l = data.length; i < l; i++) {
+    state = state(data[i]);
+  }
+  return object;
+}
+
+function parseStream(emit) {
+  var state = jsonMachine(emit);
+  return function (chunk) {
+    if (chunk === undefined) {
+      state();
+      return emit();
+    }
+    for (var i = 0, l = chunk.length; i < l; i++) {
+      state = state(chunk[i]);
+    }
+  };
+}
+
+function parseNative(data) {
+  return JSON.parse(data.toString());
+}
+
 var inspect = require("util").inspect;
+var input = require('fs').readFileSync(__dirname + "/basic.json");
+
 var inputs = [
   '"this is a \\u5ee9 string" "so is this €"\r\n"How about ¢?"\t"詩檧窣廩 禨碜婨, 珦覵 氨焨鋨"',
   '["a",1,[1,2,3]]',
@@ -354,18 +385,14 @@ var inputs = [
   '{"name":"Tim Caswell","age":31,"true":true,"false":false,"null":null}',
   '-1 -1.1 -0.3 3.14e-3 10E5'
 ];
-
+ 
+var parse = parseStream(log);
 inputs.forEach(function (input) {
-  var data = new Buffer(input);
-  var state = jsonMachine(emit);
-  for (var i = 0, l = data.length; i < l; i++) {
-    console.log("\t", state.name, data[i].toString(16), inspect(String.fromCharCode(data[i]), {colors:true}));
-    state = state(data[i]);
-  }
-  // Send END so that trailing numbers can be emitted.
-  state();
+  console.log("INPUT", inspect(input, {colors:true}));
+  parse(new Buffer(input));
 });
+parse();
 
-function emit(value) {
+function log(value) {
   console.log(inspect(value, {colors:true}));
 }
