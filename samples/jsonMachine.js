@@ -371,12 +371,7 @@ function parseStream(emit) {
   };
 }
 
-function parseNative(data) {
-  return JSON.parse(data.toString());
-}
-
 var inspect = require("util").inspect;
-var input = require('fs').readFileSync(__dirname + "/basic.json");
 
 var inputs = [
   '"this is a \\u5ee9 string" "so is this €"\r\n"How about ¢?"\t"詩檧窣廩 禨碜婨, 珦覵 氨焨鋨"',
